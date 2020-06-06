@@ -1,0 +1,106 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title></title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.18.1/moment.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.3/dist/Chart.js"></script>
+    <style>
+        div {
+            width: 50%;
+            float: left;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <canvas id="chartDL"></canvas>
+    </div>
+    <div>
+        <canvas id="chartUL"></canvas>
+    </div>
+    <div>
+        <canvas id="chartL"></canvas>
+    </div>
+    <div>
+        <a href="/stats.csv">Download</a>
+    </div>
+    <script>
+
+
+
+        function loadData(id, color, label, data) {
+
+            var ctx = document.getElementById(id).getContext('2d');
+
+            var chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [
+                        {
+                            label: label,
+                            borderColor: color,
+                            fill: false,
+                            data: data,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        xAxes: [{
+                            type: 'time',
+                            distribution: 'series',
+                            offset: true,
+                            ticks: {
+                                major: {
+                                    enabled: true,
+                                    fontStyle: 'bold'
+                                },
+                                source: 'data',
+                                autoSkip: true,
+                                autoSkipPadding: 75,
+                                maxRotation: 0,
+                                sampleSize: 100
+                            },
+                            time: {
+                                unit: 'minute'
+                            }
+                        }]
+                    }
+                }
+            });
+        }
+
+        fetch('/stats.json')
+            .then(response => response.json())
+            .then(data => {
+
+                var dl = data.map(function (d) {
+                    return {
+                        x: moment(d.t),
+                        y: ((d.DownloadSpeed * 8) / 1024 / 1024)
+                    }
+                });
+
+                var ul = data.map(function (d) {
+                    return {
+                        x: moment(d.t),
+                        y: ((d.UploadSpeed * 8) / 1024 / 1024)
+                    }
+                });
+
+                var l = data.map(function (d) {
+                    return {
+                        x: moment(d.t),
+                        y: d.Latancy
+                    }
+                });
+
+                loadData('chartDL', 'green', 'Download Speed', dl);
+                loadData('chartUL', 'red', 'Upload Speed', ul);
+                loadData('chartL', 'amber', 'Latancy', l);
+            });
+    </script>
+</body>
+</html>
