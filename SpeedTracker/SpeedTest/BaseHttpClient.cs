@@ -37,12 +37,11 @@ namespace SpeedTest.Net
             var bytesPerSecond = 0D;
             var uploadData = GenerateUploadData(2);
 
-            bytesPerSecond += await GetUploadBytesPerSecond(url, uploadData.First(), timeout);
-            foreach (var data in uploadData.Skip(1))
+            foreach (var data in uploadData)
             {
                 bytesPerSecond += await GetUploadBytesPerSecond(url, data, timeout);
-                bytesPerSecond /= 2;
             }
+            bytesPerSecond /= uploadData.Count;
 
             return bytesPerSecond;
         }
@@ -51,7 +50,7 @@ namespace SpeedTest.Net
         private const int MaxUploadSize = 4; // stop at 4k
         private HttpMessageHandler handler;
 
-        private static IEnumerable<byte[]> GenerateUploadData(int retryCount)
+        private static List<byte[]> GenerateUploadData(int retryCount)
         {
             var random = new Random();
             var result = new List<byte[]>();
@@ -79,7 +78,7 @@ namespace SpeedTest.Net
         private async Task<double> GetUploadBytesPerSecond(string uploadUrl, byte[] data, int timeout)
         {
             var cancellationTokenSource = new CancellationTokenSource();
-            cancellationTokenSource.CancelAfter(timeout);
+            //cancellationTokenSource.CancelAfter(timeout);
             CancellationToken cancellationToken = cancellationTokenSource.Token;
 
             var sw = Stopwatch.StartNew();
