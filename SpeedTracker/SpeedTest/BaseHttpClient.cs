@@ -6,7 +6,9 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
+using System.Net.Http.Handlers;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Threading;
@@ -14,12 +16,8 @@ using System.Threading.Tasks;
 
 namespace SpeedTest.Net
 {
-    internal abstract class BaseHttpClient : HttpClient
+    internal abstract class BaseHttpClient
     {
-        public BaseHttpClient(HttpMessageHandler handler, bool disposeHandler) : base(handler, disposeHandler) { }
-        public BaseHttpClient(HttpMessageHandler handler) : base(handler) { }
-        public BaseHttpClient() : base() { }
-
         internal async Task<double> GetDownloadSpeed(IEnumerable<string> downloadUrls, int timeout = 5000)
         {
             var bytesPerSecond = 0D;
@@ -51,10 +49,13 @@ namespace SpeedTest.Net
 
         private const string Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         private const int MaxUploadSize = 4; // stop at 4k
+        private HttpMessageHandler handler;
+
         private static IEnumerable<byte[]> GenerateUploadData(int retryCount)
         {
             var random = new Random();
             var result = new List<byte[]>();
+            Stream s;
 
             for (var sizeCounter = 1; sizeCounter < MaxUploadSize + 1; sizeCounter++)
             {
@@ -78,16 +79,30 @@ namespace SpeedTest.Net
         private async Task<double> GetUploadBytesPerSecond(string uploadUrl, byte[] data, int timeout)
         {
             var cancellationTokenSource = new CancellationTokenSource();
-            //cancellationTokenSource.CancelAfter(timeout);
+            cancellationTokenSource.CancelAfter(timeout);
             CancellationToken cancellationToken = cancellationTokenSource.Token;
 
             var sw = Stopwatch.StartNew();
-            using (HttpResponseMessage response = await PostAsync(uploadUrl, new System.Net.Http.ByteArrayContent(data), cancellationToken))
+            var progresshandler = new ProgressMessageHandler();
+            var client = HttpClientFactory.Create(progresshandler);
+            var transfared = 0D;
+            progresshandler.HttpSendProgress += (s, e) =>
+             {
+                 transfared = e.BytesTransferred;
+             };
+            try
+            {
+                using (HttpResponseMessage response = await client.PostAsync(uploadUrl, new ByteArrayContent(data), cancellationToken))
+                {
+                    sw.Stop();
+                    response.EnsureSuccessStatusCode();
+                    return transfared / sw.Elapsed.TotalSeconds;
+                }
+            }
+            catch(Exception ex)
             {
                 sw.Stop();
-                response.EnsureSuccessStatusCode();
-
-                return data.Length / sw.Elapsed.TotalSeconds;
+                return transfared / sw.Elapsed.TotalSeconds;
             }
         }
 
@@ -101,7 +116,8 @@ namespace SpeedTest.Net
                 CancellationToken cancellationToken = cancellationTokenSource.Token;
 
                 var sw = Stopwatch.StartNew();
-                using (HttpResponseMessage response = await GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+                var client = HttpClientFactory.Create();
+                using (HttpResponseMessage response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
                 {
                     sw.Stop();
 
@@ -130,7 +146,8 @@ namespace SpeedTest.Net
             var sw = Stopwatch.StartNew();
             try
             {
-                using (HttpResponseMessage response = await GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead))
+                var client = HttpClientFactory.Create();
+                using (HttpResponseMessage response = await client.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead))
                 {
                     var cancellationTokenSource = new CancellationTokenSource();
                     cancellationTokenSource.CancelAfter(timeout);

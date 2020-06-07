@@ -64,14 +64,26 @@ namespace SpeedTracker
                         var stats = await db.Statistics.Where(x => x.Date > DateTime.UtcNow.AddDays(-2))
                                    .ToListAsync();
 
-                        context.Response.ContentType = "application/json";
-                        await context.Response.WriteAsync(JsonConvert.SerializeObject(stats.GroupBy(x => x.Date).Select(x => new
+                        var window = TimeSpan.FromMinutes(5).Ticks;
+                        var data = stats
+                        .GroupBy(x => new DateTime(window * (x.Date.Ticks / window), DateTimeKind.Utc))
+                        .Select(x => new
                         {
                             t = x.Key,
-                            Latancy = x.Where(x => x.Type == DataType.Latancy).Average(x => x.Value),
-                            DownloadSpeed = x.Where(x => x.Type == DataType.DownloadSpeed).Average(x => x.Value),
-                            UploadSpeed = x.Where(x => x.Type == DataType.UploadSpeed).Average(x => x.Value),
-                        })));
+                            Latancies = x.Where(x => x.Type == DataType.Latancy),
+                            DownloadSpeeds = x.Where(x => x.Type == DataType.DownloadSpeed),
+                            UploadSpeeds = x.Where(x => x.Type == DataType.UploadSpeed),
+                        })
+                        .Select(x => new
+                        {
+                            t = x.t,
+                            Latancy = x.Latancies.Any() ? x.Latancies.Average(x => x.Value) : (double?)null,
+                            DownloadSpeed = x.DownloadSpeeds.Any() ? x.DownloadSpeeds.Average(x => x.Value) : (double?)null,
+                            UploadSpeed = x.UploadSpeeds.Any() ? x.UploadSpeeds.Average(x => x.Value) : (double?)null
+                        });
+
+                        context.Response.ContentType = "application/json";
+                        await context.Response.WriteAsync(JsonConvert.SerializeObject(data));
                     }
                 });
 
@@ -128,12 +140,13 @@ namespace SpeedTracker
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            SpeedTest.Net.Models.Server? server = null;
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
+                    server ??= await SpeedTest.Net.SpeedTestClient.GetServer();
 
-                    var server = await SpeedTest.Net.SpeedTestClient.GetServer();
                     using (var db = new StatisticsContext())
                     {
                         var dbServer = await db.FindAsync<Server>(server.Id);
@@ -160,6 +173,7 @@ namespace SpeedTracker
                                 Type = DataType.DownloadSpeed,
                                 Value = speed.Speed
                             });
+                            await db.SaveChangesAsync();
                         }
 
                         if (!stoppingToken.IsCancellationRequested)
@@ -171,6 +185,7 @@ namespace SpeedTracker
                                 Type = DataType.UploadSpeed,
                                 Value = speed.Speed
                             });
+                            await db.SaveChangesAsync();
                         }
 
                         if (!stoppingToken.IsCancellationRequested)
@@ -182,14 +197,15 @@ namespace SpeedTracker
                                 Type = DataType.Latancy,
                                 Value = latancy
                             });
+                            await db.SaveChangesAsync();
                         }
-
-                        await db.SaveChangesAsync();
                     }
 
                 }
                 catch (Exception ex)
                 {
+                    server = null;
+
                     using (var db = new StatisticsContext())
                     {
                         db.Events.Add(new Event

@@ -57,6 +57,8 @@ namespace SpeedTest.Net
             }
         }
 
+        // we shoudl cache this here
+        private Server? server = null;
         internal async Task<Server> GetServer(string ip = "")
         {
             try
@@ -66,7 +68,8 @@ namespace SpeedTest.Net
                 if (!string.IsNullOrEmpty(ip?.Trim()))
                     url = $"https://ipinfo.io/{ip}/json";
 
-                var loc = JsonConvert.DeserializeObject<LocationModel>(await GetStringAsync("https://ipinfo.io/json"));
+                var client = HttpClientFactory.Create();
+                var loc = JsonConvert.DeserializeObject<LocationModel>(await client.GetStringAsync("https://ipinfo.io/json"));
                 return await GetServer(loc.Latitude, loc.Longitude);
             }
             catch (Exception ex)
@@ -127,7 +130,7 @@ namespace SpeedTest.Net
             }
             catch (Exception ex)
             {
-                throw new Exception("Failed to get download speed", ex);
+                throw new Exception("Failed to get upload speed", ex);
             }
         }
         internal async Task<double> GetLatancy(Server server = null)
@@ -150,11 +153,6 @@ namespace SpeedTest.Net
             {
                 throw new Exception("Failed to get download speed", ex);
             }
-        }
-
-        public SpeedTestHttpClient() : base(new HttpClientHandler() { Proxy = new WebProxy() })
-        {
-            Timeout = TimeSpan.FromSeconds(30);
         }
     }
 }
