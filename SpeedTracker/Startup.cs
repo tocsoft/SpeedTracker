@@ -8,8 +8,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Newtonsoft.Json;
 using SpeedTest.Net.Helpers;
@@ -19,12 +21,22 @@ namespace SpeedTracker
 {
     public class Startup
     {
+        public IConfiguration Configuration { get; }
+
+        public Startup(IConfiguration configuration)
+        {
+            Configuration = configuration;
+        }
+
         // This method gets called by the runtime. Use this method to add services to the container.
         // For more information on how to configure your application, visit https://go.microsoft.com/fwlink/?LinkID=398940
         public void ConfigureServices(IServiceCollection services)
         {
             using (var db = new StatisticsContext())
                 db.Database.EnsureCreated();
+
+            services.AddOptions<Settings>()
+                    .Bind(Configuration);
 
             services.AddHostedService<StatisticsCollector>();
 
@@ -49,7 +61,7 @@ namespace SpeedTracker
                 {
                     using (var db = new StatisticsContext())
                     {
-                        var stats = await db.Statistics.Where(x => x.Date > DateTime.UtcNow.AddHours(-12))
+                        var stats = await db.Statistics.Where(x => x.Date > DateTime.UtcNow.AddDays(-2))
                                    .ToListAsync();
 
                         context.Response.ContentType = "application/json";
@@ -96,72 +108,101 @@ namespace SpeedTracker
                     context.Response.ContentType = "text/csv";
                     await context.Response.WriteAsync(sb.ToString());
                 });
+
+                endpoints.MapGet("/stats.db", async context =>
+                {
+                    await context.Response.SendFileAsync(StatisticsContext.Path);
+                });
             });
         }
     }
 
     public class StatisticsCollector : BackgroundService
     {
+        private readonly IOptions<Settings> options;
+
+        public StatisticsCollector(IOptions<Settings> options)
+        {
+            this.options = options;
+        }
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                var server = await SpeedTest.Net.SpeedTestClient.GetServer();
-                using (var db = new StatisticsContext())
+                try
                 {
-                    var dbServer = await db.FindAsync<Server>(server.Id);
-                    var now = DateTime.UtcNow;
-                    if (dbServer == null)
-                    {
-                        dbServer = new Server
-                        {
-                            Id = server.Id,
-                            Host = server.Host,
-                            Latitude = server.Latitude,
-                            Longitude = server.Longitude
-                        };
 
-                        db.Add(dbServer);
+                    var server = await SpeedTest.Net.SpeedTestClient.GetServer();
+                    using (var db = new StatisticsContext())
+                    {
+                        var dbServer = await db.FindAsync<Server>(server.Id);
+                        var now = DateTime.UtcNow;
+                        if (dbServer == null)
+                        {
+                            dbServer = new Server
+                            {
+                                Id = server.Id,
+                                Host = server.Host,
+                                Latitude = server.Latitude,
+                                Longitude = server.Longitude
+                            };
+
+                            db.Add(dbServer);
+                        }
+
+                        if (!stoppingToken.IsCancellationRequested)
+                        {
+                            var speed = await SpeedTest.Net.SpeedTestClient.GetDownloadSpeed(server);
+                            db.Add(new Statistic
+                            {
+                                Date = now,
+                                Type = DataType.DownloadSpeed,
+                                Value = speed.Speed
+                            });
+                        }
+
+                        if (!stoppingToken.IsCancellationRequested)
+                        {
+                            var speed = await SpeedTest.Net.SpeedTestClient.GetUploadSpeed(server);
+                            db.Add(new Statistic
+                            {
+                                Date = now,
+                                Type = DataType.UploadSpeed,
+                                Value = speed.Speed
+                            });
+                        }
+
+                        if (!stoppingToken.IsCancellationRequested)
+                        {
+                            var latancy = await SpeedTest.Net.SpeedTestClient.GetLatancy(server);
+                            db.Add(new Statistic
+                            {
+                                Date = now,
+                                Type = DataType.Latancy,
+                                Value = latancy
+                            });
+                        }
+
+                        await db.SaveChangesAsync();
                     }
 
-                    if (!stoppingToken.IsCancellationRequested)
-                    {
-                        var speed = await SpeedTest.Net.SpeedTestClient.GetDownloadSpeed(server);
-                        db.Add(new Statistic
-                        {
-                            Date = now,
-                            Type = DataType.DownloadSpeed,
-                            Value = speed.Speed
-                        });
-                    }
-
-                    if (!stoppingToken.IsCancellationRequested)
-                    {
-                        var speed = await SpeedTest.Net.SpeedTestClient.GetUploadSpeed(server);
-                        db.Add(new Statistic
-                        {
-                            Date = now,
-                            Type = DataType.UploadSpeed,
-                            Value = speed.Speed
-                        });
-                    }
-
-                    if (!stoppingToken.IsCancellationRequested)
-                    {
-                        var latancy = await SpeedTest.Net.SpeedTestClient.GetLatancy(server);
-                        db.Add(new Statistic
-                        {
-                            Date = now,
-                            Type = DataType.Latancy,
-                            Value = latancy
-                        });
-                    }
-
-                    await db.SaveChangesAsync();
                 }
-
+                catch (Exception ex)
+                {
+                    using (var db = new StatisticsContext())
+                    {
+                        db.Events.Add(new Event
+                        {
+                            Date = DateTime.UtcNow,
+                            Title = ex.Message,
+                            Details = ex.ToString()
+                        });
+                        await db.SaveChangesAsync();
+                    }
+                }
                 // should be able to change this setting!!!
-                await Task.Delay(TimeSpan.FromSeconds(60));
+                await Task.Delay(options.Value.Frequancy);
             }
         }
     }
