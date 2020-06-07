@@ -78,21 +78,21 @@
 
                 var dl = data.map(function (d) {
                     return {
-                        x: moment(d.t),
+                        x: moment.utc(d.t).local(),
                         y: ((d.DownloadSpeed * 8) / 1024 / 1024)
                     }
                 });
 
                 var ul = data.map(function (d) {
                     return {
-                        x: moment(d.t),
+                        x: moment.utc(d.t).local(),
                         y: ((d.UploadSpeed * 8) / 1024 / 1024)
                     }
                 });
 
                 var l = data.map(function (d) {
                     return {
-                        x: moment(d.t),
+                        x: moment.utc(d.t).local(),
                         y: d.Latancy
                     }
                 });
