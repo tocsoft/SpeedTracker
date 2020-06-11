@@ -102,16 +102,20 @@ namespace SpeedTracker
                         {
                             sb.Append(g.Key);
                             sb.Append(',');
-                            var l = g.Where(x => x.Type == DataType.Latancy).Average(x => x.Value);
-                            sb.Append(l);
+                            var lD = g.Where(x => x.Type == DataType.Latancy);
+                            sb.Append(lD.Any() ? lD.Average(x => x.Value).ToString() : "");
                             sb.Append(',');
 
-                            var d = g.Where(x => x.Type == DataType.DownloadSpeed).Average(x => x.Value).FromBytesPerSecondTo(SpeedTest.Net.Enums.SpeedTestUnit.MegaBitsPerSecond);
-                            sb.Append(d);
+                            var d = g.Where(x => x.Type == DataType.DownloadSpeed);
+                            sb.Append(d.Any() ? d.Average(x => x.Value)
+                                                .FromBytesPerSecondTo(SpeedTest.Net.Enums.SpeedTestUnit.MegaBitsPerSecond)
+                                                .ToString() : "");
                             sb.Append(',');
 
-                            var u = g.Where(x => x.Type == DataType.UploadSpeed).Average(x => x.Value).FromBytesPerSecondTo(SpeedTest.Net.Enums.SpeedTestUnit.MegaBitsPerSecond);
-                            sb.Append(u);
+                            var u = g.Where(x => x.Type == DataType.UploadSpeed);
+                            sb.Append(u.Any() ? u.Average(x => x.Value)
+                                                .FromBytesPerSecondTo(SpeedTest.Net.Enums.SpeedTestUnit.MegaBitsPerSecond)
+                                                .ToString() : "");
                             sb.AppendLine();
                         }
                     }
